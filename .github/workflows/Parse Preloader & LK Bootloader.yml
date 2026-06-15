@@ -1,0 +1,89 @@
+name: Parse Preloader & LK Bootloader
+on:
+  workflow_dispatch:
+    inputs:
+      FIRMWARE_URL:
+        description: 固件/镜像下载地址(包含preloader/lk)
+        required: true
+        default: 'https://example.com/firmware.zip'
+      IS_MTK:
+        description: 是否联发科MTK固件(true/false)
+        required: true
+        default: 'true'
+
+jobs:
+  parse-bl:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      OUTPUT_DIR: bl_parse_output
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget gcc make libssl-dev
+
+      - name: Install MTK preloader tools & LK parser
+        run: |
+          # 安装mtk-tools(解析preloader)
+          git clone https://github.com/xybp888/mtk-tools.git
+          cd mtk-tools && make && sudo cp mtkclient /usr/local/bin/ && cd ..
+          # 安装lk解析工具 lkparse
+          pip3 install lkparse twrpdtgen==2.2.0
+
+      - name: Download firmware file
+        run: |
+          wget -O firmware.zip ${{ github.event.inputs.FIRMWARE_URL }}
+          mkdir firmware
+          unzip -q firmware.zip -d firmware/
+          ls -la firmware/
+
+      - name: Create output folder
+        run: mkdir -p $OUTPUT_DIR
+
+      - name: Parse MTK Preloader
+        if: github.event.inputs.IS_MTK == 'true'
+        run: |
+          find firmware -name "preloader*.bin" -type f > preloader_list.txt
+          while read bl_file; do
+            if [ -n "$bl_file" ]; then
+              echo "===== Parse $bl_file ====="
+              mtkclient --dump $bl_file >> $OUTPUT_DIR/preloader_dump.log
+              cp "$bl_file" $OUTPUT_DIR/
+            fi
+          done < preloader_list.txt
+
+      - name: Parse LK (Little Kernel)
+        run: |
+          find firmware -name "lk.bin" -o -name "lk.img" -type f > lk_list.txt
+          while read lk_file; do
+            if [ -n "$lk_file" ]; then
+              echo "===== Parse $lk_file ====="
+              lkparse "$lk_file" >> $OUTPUT_DIR/lk_dump.log
+              binwalk "$lk_file" >> $OUTPUT_DIR/lk_binwalk.log
+              cp "$lk_file" $OUTPUT_DIR/
+            fi
+          done < lk_list.txt
+
+      - name: Package all parse result
+        run: |
+          cd $OUTPUT_DIR
+          zip -r ../BL_Parse_${{ github.run_number }}.zip .
+          cd ..
+
+      - name: Upload parse result to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: BL_Parse_${{ github.run_number }}.zip
+          name: Preloader_LK_Parse_${{ github.run_number }}
+          tag_name: bl-parse-${{ github.run_number }}
+          body: |
+            自动解析 Preloader + LK 日志包
+            固件源地址: ${{ github.event.inputs.FIRMWARE_URL }}
+            MTK模式: ${{ github.event.inputs.IS_MTK }}
+            构建编号: ${{ github.run_number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
