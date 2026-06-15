@@ -46,6 +46,7 @@ jobs:
       - name: Adapt for OrangeFox Recovery
         run: |
           cd device_tree_output
+          # 生成橙狐配置文件
           echo "# OrangeFox Prebuilt Config" > fox_prebuilt.mk
           echo "FOX_BUILD_TYPE := Official" >> fox_prebuilt.mk
           echo "FOX_TARGET_DEVICE := \$(DEVICE)" >> fox_prebuilt.mk
@@ -59,9 +60,11 @@ jobs:
           echo "FOX_BUILD_DATE := \$(shell date +%Y%m%d)" >> fox_version.mk
           echo "FOX_MAINTAINER := Auto-Generated" >> fox_version.mk
 
+          # 创建橙狐RC目录与文件
           mkdir -p recovery/root/orangefox
           echo "# OrangeFox Init RC" > recovery/root/orangefox/orangefox.rc
 
+          # 追加新版TWRP编译参数
           echo "TW_NEW_ION_HEAP := true" >> BoardConfig.mk
           echo "TW_TARGET_USES_QCOM_BSP := false" >> BoardConfig.mk
           echo "TW_INCLUDE_NTFS_3G := true" >> BoardConfig.mk
@@ -69,7 +72,11 @@ jobs:
           echo "TW_HAS_DOWNLOAD_MODE := true" >> BoardConfig.mk
           echo "OF_MAINTAINER := Auto" >> BoardConfig.mk
 
-          dos2unix *.mk *.rc recovery/root/orangefox/*.rc
+          # 仅处理存在的文件，忽略不存在的通配符
+          dos2unix *.mk 2>/dev/null || true
+          dos2unix recovery/root/orangefox/orangefox.rc 2>/dev/null || true
+
+          # 统一权限
           find . -type f -exec chmod 644 {} \;
           find . -type d -exec chmod 755 {} \;
           cd ..
