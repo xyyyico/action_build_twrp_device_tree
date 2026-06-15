@@ -25,14 +25,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget
+          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget libusb-1.0-0-dev
 
-      # 直接下载预编译 mtkclient，跳过 git clone + make
-      - name: Install mtkclient binary
+      # 关键：用 pip 装官方 mtkclient，彻底避开所有下载/编译问题
+      - name: Install official mtkclient (pip)
         run: |
-          wget -q https://github.com/xybp888/mtk-tools/releases/download/latest/mtkclient-linux
-          chmod +x mtkclient-linux
-          sudo mv mtkclient-linux /usr/local/bin/mtkclient
+          pip3 install --upgrade pip
+          pip3 install mtkclient
+          # 确认是否可用
           mtkclient --version || true
 
       - name: Install LK parser & twrpdtgen
