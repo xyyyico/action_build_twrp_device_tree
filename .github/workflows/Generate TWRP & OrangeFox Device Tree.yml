@@ -24,53 +24,44 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up full build environment
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            python3 python3-pip cpio wget zip unzip git \
-            liblz4-tool lzop bc rsync file dos2unix
+        run: >
+          sudo apt-get update -y &&
+          sudo apt-get install -y python3 python3-pip cpio wget zip unzip git liblz4-tool lzop bc rsync file dos2unix
 
-      - name: Install latest twrpdtgen & dependencies
-        run: |
-          pip3 install --upgrade pip
+      - name: Install twrpdtgen
+        run: >
+          pip3 install --upgrade pip &&
           pip3 install --upgrade twrpdtgen pycryptodome
 
       - name: Download recovery image
-        run: |
-          wget -O recovery.img "${{ github.event.inputs.IMG_URL }}"
+        run: >
+          wget -O recovery.img "${{ github.event.inputs.IMG_URL }}" &&
           file recovery.img
 
-      - name: Generate base TWRP Device Tree (Latest TWRP)
-        run: |
-          mkdir -p device_tree_output
+      - name: Generate base TWRP Device Tree
+        run: >
+          mkdir -p device_tree_output &&
           python3 -m twrpdtgen -o device_tree_output recovery.img
 
       - name: Adapt for OrangeFox Recovery
         run: |
           cd device_tree_output
-          # Generate OrangeFox config files
-          cat > fox_prebuilt.mk <<'EOF'
-# OrangeFox Prebuilt Config
-FOX_BUILD_TYPE := Official
-FOX_TARGET_DEVICE := $(DEVICE)
-FOX_USE_TWRP_DT := true
-FOX_ENABLE_MAGISK_BOOT := true
-FOX_REMOVE_DUPLICATE_PROP := true
-FOX_USE_LZ4 := true
-EOF
+          echo "# OrangeFox Prebuilt Config" > fox_prebuilt.mk
+          echo "FOX_BUILD_TYPE := Official" >> fox_prebuilt.mk
+          echo "FOX_TARGET_DEVICE := \$(DEVICE)" >> fox_prebuilt.mk
+          echo "FOX_USE_TWRP_DT := true" >> fox_prebuilt.mk
+          echo "FOX_ENABLE_MAGISK_BOOT := true" >> fox_prebuilt.mk
+          echo "FOX_REMOVE_DUPLICATE_PROP := true" >> fox_prebuilt.mk
+          echo "FOX_USE_LZ4 := true" >> fox_prebuilt.mk
 
-          cat > fox_version.mk <<'EOF'
-# OrangeFox Version Info
-FOX_VERSION := R11.1
-FOX_BUILD_DATE := $(shell date +%Y%m%d)
-FOX_MAINTAINER := Auto-Generated
-EOF
+          echo "# OrangeFox Version Info" > fox_version.mk
+          echo "FOX_VERSION := R11.1" >> fox_version.mk
+          echo "FOX_BUILD_DATE := \$(shell date +%Y%m%d)" >> fox_version.mk
+          echo "FOX_MAINTAINER := Auto-Generated" >> fox_version.mk
 
-          # Create OrangeFox init dir and rc file
           mkdir -p recovery/root/orangefox
           echo "# OrangeFox Init RC" > recovery/root/orangefox/orangefox.rc
 
-          # Add latest TWRP compatible flags
           echo "TW_NEW_ION_HEAP := true" >> BoardConfig.mk
           echo "TW_TARGET_USES_QCOM_BSP := false" >> BoardConfig.mk
           echo "TW_INCLUDE_NTFS_3G := true" >> BoardConfig.mk
@@ -78,15 +69,13 @@ EOF
           echo "TW_HAS_DOWNLOAD_MODE := true" >> BoardConfig.mk
           echo "OF_MAINTAINER := Auto" >> BoardConfig.mk
 
-          # Fix file format & permissions
           dos2unix *.mk *.rc recovery/root/orangefox/*.rc
           find . -type f -exec chmod 644 {} \;
           find . -type d -exec chmod 755 {} \;
           cd ..
 
-      - name: Compress dual-use Device Tree
-        run: |
-          zip -r "TWRP_OrangeFox_DT_${{ github.run_number }}.zip" device_tree_output/
+      - name: Compress Device Tree
+        run: zip -r "TWRP_OrangeFox_DT_${{ github.run_number }}.zip" device_tree_output/
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
