@@ -17,6 +17,8 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       OUTPUT_DIR: bl_parse_output
+      # 关闭git credential 避免用户名读取报错
+      GIT_TERMINAL_PROMPT: 0
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -24,20 +26,31 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget gcc make libssl-dev
+          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget gcc make libssl-dev net-tools dnsutils
 
-      - name: Install MTK preloader tools & LK parser
+      - name: Fix git config & network
         run: |
-          # 安装mtk-tools(解析preloader)
-          git clone https://github.com/xybp888/mtk-tools.git
-          cd mtk-tools && make && sudo cp mtkclient /usr/local/bin/ && cd ..
-          # 安装lk解析工具 lkparse
-          pip3 install lkparse twrpdtgen==2.2.0
+          git config --global http.sslVerify false
+          git config --global core.compression 0
+          git config --global http.postBuffer 524288000
+
+      - name: Install mtk-tools (Preloader parser)
+        run: |
+          # 使用国内镜像 + 固定英文目录，规避中文乱码
+          git clone --depth 1 https://gitlab.com/mtk-tools/mtk-tools.git mtk-tools
+          cd mtk-tools
+          make
+          sudo cp mtkclient /usr/local/bin/
+          cd ..
+
+      - name: Install LK parser & twrpdtgen
+        run: |
+          pip3 install --no-cache-dir lkparse twrpdtgen==2.2.0
 
       - name: Download firmware file
         run: |
-          wget -O firmware.zip ${{ github.event.inputs.FIRMWARE_URL }}
-          mkdir firmware
+          wget --retry-connrefused --waitretry=3 -O firmware.zip ${{ github.event.inputs.FIRMWARE_URL }}
+          mkdir -p firmware
           unzip -q firmware.zip -d firmware/
           ls -la firmware/
 
@@ -51,7 +64,7 @@ jobs:
           while read bl_file; do
             if [ -n "$bl_file" ]; then
               echo "===== Parse $bl_file ====="
-              mtkclient --dump $bl_file >> $OUTPUT_DIR/preloader_dump.log
+              mtkclient --dump "$bl_file" >> $OUTPUT_DIR/preloader_dump.log 2>&1
               cp "$bl_file" $OUTPUT_DIR/
             fi
           done < preloader_list.txt
@@ -62,8 +75,8 @@ jobs:
           while read lk_file; do
             if [ -n "$lk_file" ]; then
               echo "===== Parse $lk_file ====="
-              lkparse "$lk_file" >> $OUTPUT_DIR/lk_dump.log
-              binwalk "$lk_file" >> $OUTPUT_DIR/lk_binwalk.log
+              lkparse "$lk_file" >> $OUTPUT_DIR/lk_dump.log 2>&1
+              binwalk "$lk_file" >> $OUTPUT_DIR/lk_binwalk.log 2>&1
               cp "$lk_file" $OUTPUT_DIR/
             fi
           done < lk_list.txt
