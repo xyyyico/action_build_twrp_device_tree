@@ -17,7 +17,6 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       OUTPUT_DIR: bl_parse_output
-      # 关闭git credential 避免用户名读取报错
       GIT_TERMINAL_PROMPT: 0
     steps:
       - name: Checkout code
@@ -26,22 +25,15 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget gcc make libssl-dev net-tools dnsutils
+          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget
 
-      - name: Fix git config & network
+      # 直接下载预编译 mtkclient，跳过 git clone + make
+      - name: Install mtkclient binary
         run: |
-          git config --global http.sslVerify false
-          git config --global core.compression 0
-          git config --global http.postBuffer 524288000
-
-      - name: Install mtk-tools (Preloader parser)
-        run: |
-          # 使用国内镜像 + 固定英文目录，规避中文乱码
-          git clone --depth 1 https://gitlab.com/mtk-tools/mtk-tools.git mtk-tools
-          cd mtk-tools
-          make
-          sudo cp mtkclient /usr/local/bin/
-          cd ..
+          wget -q https://github.com/xybp888/mtk-tools/releases/download/latest/mtkclient-linux
+          chmod +x mtkclient-linux
+          sudo mv mtkclient-linux /usr/local/bin/mtkclient
+          mtkclient --version || true
 
       - name: Install LK parser & twrpdtgen
         run: |
