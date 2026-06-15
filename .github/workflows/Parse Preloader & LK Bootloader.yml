@@ -18,27 +18,41 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       OUTPUT_DIR: bl_parse_output
       GIT_TERMINAL_PROMPT: 0
+      # 全局禁用git交互弹窗
+      GIT_SSH_COMMAND: ssh -o StrictHostKeyChecking=no
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Install system dependencies
+      - name: Install system base dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y git python3 python3-pip binwalk cpio unzip wget libusb-1.0-0-dev
+          sudo apt install -y git python3 python3-pip python3-venv binwalk cpio unzip wget libusb-1.0-0-dev build-essential
 
-      # 关键：用 pip 装官方 mtkclient，彻底避开所有下载/编译问题
-      - name: Install official mtkclient (pip)
+      # 1. 升级pip + 创建虚拟环境，规避系统目录写入权限问题
+      - name: Prepare Python venv
         run: |
-          pip3 install --upgrade pip
-          pip3 install mtkclient
-          # 确认是否可用
-          mtkclient --version || true
+          python3 -m venv pyenv
+          source pyenv/bin/activate
+          pip install --upgrade pip setuptools wheel
 
+      # 2. 拉取 mtkclient 源码并本地安装（纯HTTPS、无账号要求）
+      - name: Build & install mtkclient from source
+        run: |
+          source pyenv/bin/activate
+          git clone --depth 1 --single-branch https://github.com/bkerler/mtkclient.git
+          cd mtkclient
+          pip install .
+          cd ..
+          mtkclient --help || true
+
+      # 3. 安装 lkparse + twrpdtgen
       - name: Install LK parser & twrpdtgen
         run: |
-          pip3 install --no-cache-dir lkparse twrpdtgen==2.2.0
+          source pyenv/bin/activate
+          pip install --no-cache-dir lkparse twrpdtgen==2.2.0
 
+      # 4. 下载固件
       - name: Download firmware file
         run: |
           wget --retry-connrefused --waitretry=3 -O firmware.zip ${{ github.event.inputs.FIRMWARE_URL }}
@@ -49,9 +63,11 @@ jobs:
       - name: Create output folder
         run: mkdir -p $OUTPUT_DIR
 
+      # 解析 Preloader
       - name: Parse MTK Preloader
         if: github.event.inputs.IS_MTK == 'true'
         run: |
+          source pyenv/bin/activate
           find firmware -name "preloader*.bin" -type f > preloader_list.txt
           while read bl_file; do
             if [ -n "$bl_file" ]; then
@@ -61,8 +77,10 @@ jobs:
             fi
           done < preloader_list.txt
 
+      # 解析 LK
       - name: Parse LK (Little Kernel)
         run: |
+          source pyenv/bin/activate
           find firmware -name "lk.bin" -o -name "lk.img" -type f > lk_list.txt
           while read lk_file; do
             if [ -n "$lk_file" ]; then
@@ -73,12 +91,14 @@ jobs:
             fi
           done < lk_list.txt
 
+      # 打包结果
       - name: Package all parse result
         run: |
           cd $OUTPUT_DIR
           zip -r ../BL_Parse_${{ github.run_number }}.zip .
           cd ..
 
+      # 上传到 Release
       - name: Upload parse result to Release
         uses: softprops/action-gh-release@v1
         with:
